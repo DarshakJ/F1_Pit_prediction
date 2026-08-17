@@ -1,0 +1,69 @@
+1. Race Progress & Timing
+LapNumber — Strong predictor of pit probability (single-feature ROC-AUC ≈ 0.702); pit likelihood increases toward the middle/late race.
+RaceProgress — Shows a clear nonlinear pit window: ~5.3% early → ~40.5% around 60–65% → ~3.5% near the finish.
+DistanceToFinish — Complements RaceProgress by explicitly representing how much race remains; useful for deciding whether a late pit is worthwhile.
+LapNumber × Stint — Combines absolute race stage with strategic stint to distinguish different race strategies at the same lap.
+
+
+2. Tyre Condition
+TyreLife — Strong predictor (ROC-AUC ≈ 0.699); oldest tyre decile has ≈39.4% positive rate vs ≈2.8% for the youngest.
+TyreLife² / log(TyreLife) — Captures the nonlinear increase in pit probability as tyres become older.
+Compound — Pit rates vary substantially by compound: Hard ≈32.75%, Soft ≈19.35%, Medium ≈10.11%, indicating different strategic usage.
+TyreLife × RaceProgress — Captures whether tyre age is high relative to the current race stage, rather than treating tyre age independently.
+TyreLife × Stint — Captures how tyre age behaves differently depending on the driver's current strategic stint.
+
+
+3. Race Strategy
+Stint — Strongest individual predictor, with ROC-AUC ≈ 0.747; Stint 1 ≈6% vs Stint 2 ≈39% positive rate.
+Stint × RaceProgress — Represents the driver's strategic state by combining current stint with race position.
+Pit-stop history variables — Previous pit activity provides direct information about the driver's current strategy and likelihood of another stop.
+Position — Represents the driver's current competitive state, which can influence the strategic value/timing of a pit.
+PositionChange — Captures recent competitive movement and can provide additional context for an impending strategic decision.
+
+
+4. Lap Performance
+LapTime — Represents current race pace and helps identify whether the driver's performance is deteriorating.
+LapTime_Delta — Captures the change in pace, which can be more informative than absolute lap time alone.
+Recent LapTime / rolling average — Smooths individual-lap noise and identifies sustained pace deterioration.
+Recent LapTime volatility — Captures instability in recent performance that may precede a strategic decision.
+
+
+5. Degradation
+Cumulative_Degradation — Weak linear relationship with target (Spearman ρ ≈ −0.154), suggesting degradation is not adequately represented by a simple linear effect.
+Degradation² — Allows the model to capture nonlinear degradation behavior.
+Extreme-Degradation Flag — Values below approximately −200 showed ≈58.6% positive rate, indicating a distinct extreme regime.
+Recent degradation trend — Captures whether tyre/performance degradation is accelerating rather than simply measuring its current level.
+
+
+6. Categorical / Race Context
+Driver — ~887 unique drivers make this a high-cardinality categorical feature; driver-specific strategy can therefore be important.
+Race — Race-level positive rates vary roughly 9%–39%, showing meaningful circuit/race context.
+Year — 2023 is a major anomaly with only ≈0.96% positives versus ≈26.7%–29.5% in surrounding years.
+Compound — Different compounds have very different observed pit rates, reflecting tyre characteristics and strategic usage.
+
+
+7. Feature Engineering — One-line explanation
+RaceProgress² / Cube — Captures the curved relationship between race stage and pit probability.
+LapNumber² / Log — Captures nonlinear effects of absolute lap number.
+DistanceToFinish — Gives the model explicit information about remaining race distance.
+TyreLife² / Log — Models nonlinear tyre ageing.
+TyreLife × RaceProgress — Captures tyre age in the context of race stage.
+TyreLife × Stint — Captures tyre condition within strategic stint.
+Stint × RaceProgress — Represents strategic race state.
+LapNumber × Stint — Combines race position with stint strategy.
+Degradation² — Captures nonlinear degradation effects.
+Extreme-Degradation Indicator — Separates unusual degradation regimes from normal observations.
+Lag Features — Capture what happened on previous laps.
+Rolling Features — Capture recent trends rather than relying on one lap.
+Sequence Features — Must be generated within Year + Race + Driver using only past information to prevent future leakage.
+
+
+8. Modeling / Data Treatment
+Target imbalance — Positive class is ≈19.9%, so accuracy is not an appropriate primary metric.
+Class weighting — Logistic Regression/Random Forest use class_weight='balanced' so minority pit events receive greater importance.
+SMOTE — Not preferred because synthetic observations can create unrealistic race/driver sequences.
+One-Hot Encoding — Used for Logistic Regression/RF because it represents categories without imposing artificial numerical ordering.
+LightGBM categorical handling — Uses native categorical features instead of creating a very large one-hot matrix.
+CatBoost — Specialized for categorical variables and particularly suitable for high-cardinality features such as Driver/Race.
+ROC-AUC — Primary metric because the competition evaluates how well the model ranks pit vs non-pit observations.
+Group validation — StratifiedGroupKFold helps test whether the model generalizes across races rather than memorizing race-specific patterns.

@@ -703,3 +703,50 @@ Race × Stint
 Year × Race
 Year × Stint
 
+
+
+###################################
+
+Why not SMOTE to handle imabalnce dataset. (Are we using SMOTE?)
+No.
+
+And that's deliberate.
+
+For this particular problem, I would not make SMOTE the default solution.
+
+Why?
+
+Because our data is not ordinary independent tabular data.
+
+We have:
+
+Year
+Race
+Driver
+LapNumber
+Stint
+TyreLife
+RaceProgress
+
+and multiple rows belong to the same race/driver sequence.
+
+If we generate synthetic observations with SMOTE, we could create artificial combinations such as:
+
+Driver = D109
+Race = Monaco
+Stint = 4
+LapNumber = 12
+TyreLife = 28
+
+that may not represent a physically/strategically realistic race state.
+
+It can also complicate group-aware validation.
+
+So instead, we're primarily handling imbalance through "class weighting" + an appropriate evaluation metric.
+
+exmple =>> class_weight='balanced'
+
+
+#############################
+
+
