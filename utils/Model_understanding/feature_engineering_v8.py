@@ -1,0 +1,334 @@
+#Feature Engineering
+#Tyre Life
+def add_tire_life_columns(df):
+    max_tire_life = {
+        "MEDIUM": 40,
+        "HARD": 55,
+        "SOFT": 30,
+        "INTERMEDIATE": 25,
+        "WET": 20
+    }
+
+    df["MaxTireLife"] = df["Compound"].map(max_tire_life)
+
+    df["TireRemainingLife"] = (
+        df["MaxTireLife"] - df["TyreLife"]
+    ).clip(lower=0)
+    df["TireAgePct"] = (
+    df["TyreLife"] / df["MaxTireLife"]).clip(0, 1)
+    df["TireRemainingPct"] = (df["TireRemainingLife"] / df["MaxTireLife"]).clip(0, 1)
+    
+
+    return df
+
+# Laps
+def add_laps_for_each_race(df):
+    df["RaceLaps"] = (
+    df["LapNumber"] / (df["RaceProgress"])
+).round()
+    df["LapsRemaining"] = df["RaceLaps"] - df["LapNumber"]
+    return df
+
+# Position
+def prev_position_calcute(df):
+    df["Prev_Position"] = df["Position"] + df["Position_Change"]
+    return df
+
+
+#  LapTimeAvg_3
+def get_trend_data(df):
+    df["LapTimeAvg_3"] = (
+        df.groupby(["Year", "Race", "Driver"])["LapTime (s)"]
+        .transform(lambda x: x.rolling(3, min_periods=1).mean())
+    )
+    return df
+
+## Did not use v4
+def calculate_race_progress(df, is_drop=True):
+    condition = (df["Race"] == "Pre-Season Testing") & (
+        (df["RaceLaps"] < 31) | (df["RaceLaps"] > 78)
+    )
+
+    if is_drop:
+        # Keep rows that do NOT match the condition
+        df = df[~condition] 
+    F1_RACE_LAPS = {
+        "Bahrain Grand Prix": 57,
+        "Saudi Arabian Grand Prix": 50,
+        "Australian Grand Prix": 58,
+        "Azerbaijan Grand Prix": 51,
+        "Miami Grand Prix": 57,
+        "Monaco Grand Prix": 78,
+        "Spanish Grand Prix": 66,
+        "Canadian Grand Prix": 70,
+        "Austrian Grand Prix": 71,
+        "British Grand Prix": 52,
+        "Hungarian Grand Prix": 70,
+        "Belgian Grand Prix": 44,
+        "Dutch Grand Prix": 72,
+        "Italian Grand Prix": 51,
+        "Singapore Grand Prix": 62,
+        "Japanese Grand Prix": 53,
+        "Qatar Grand Prix": 57,
+        "United States Grand Prix": 56,
+        "Mexico City Grand Prix": 71,
+        "São Paulo Grand Prix": 71,
+        "Las Vegas Grand Prix": 50,
+        "Abu Dhabi Grand Prix": 58,
+        }
+    mask = df["Race"].isin(F1_RACE_LAPS.keys())
+
+    # Update only matching rows
+    df.loc[mask, "RaceLaps"] = df.loc[mask, "Race"].map(F1_RACE_LAPS)
+    df["RaceLaps"] = df["Race"].map(F1_RACE_LAPS)
+    df["RaceProgress"] = df["LapNumber"] / df["RaceLaps"]
+    df["LapsRemaining"] = df["RaceLaps"] - df["LapNumber"]
+    return df
+
+# Did not use v3
+def set_normalize_tyreLife(df):
+    df['Normalized_TyreLife'] = df['TyreLife'] / df.groupby(
+        ['Year', 'Race', 'Driver', 'Stint']
+    )['TyreLife'].transform('max')
+    return df
+
+# Did not use v3
+def set_normalize_tyreLife_wo_driver(df):
+    df['Normalized_TyreLife'] = df['TyreLife'] / df.groupby(
+        ['Year', 'Race', 'Stint','Compound']
+    )['TyreLife'].transform('max')
+    return df
+
+def add_group_factors(
+    df: pd.DataFrame,
+    df_train_merged: pd.DataFrame,
+    group_cols: list[str],
+    value_col: str = "TyreLife",
+    suffix: str = ""
+) -> pd.DataFrame:
+    """
+    Computes group aggregations on df_train_merged, converts metrics into dictionary 
+    factors using multi-column tuple keys, and maps them to df.
+    """
+    df = df.copy()
+
+    # 1. Compute group statistics
+    stats_all = (
+        df_train_merged.groupby(group_cols)[value_col]
+        .agg(
+            Stint_Count="count",
+            Stint_Tyre_Mean_Life="mean",
+            Stint_Tyre_Median_Life="median",
+            Stint_Tyre_Min_Life="min",
+            Stint_Tyre_Max_Life="max",
+            Stint_Tyre_Std_Dev="std",
+        )
+        .reset_index()
+    )
+
+    stat_cols = ["Stint_Count", "Stint_Tyre_Mean_Life", "Stint_Tyre_Median_Life", "Stint_Tyre_Min_Life", "Stint_Tyre_Max_Life", "Stint_Tyre_Std_Dev"]
+
+    # 2. Build tuple keys for multi-column matching
+    if len(group_cols) == 1:
+        keys = df[group_cols[0]]
+    else:
+        keys = list(zip(*[df[col] for col in group_cols]))
+
+    # 3. Create dictionary factor for each stat and map to main DF
+    for col in stat_cols:
+        factor_dict = stats_all.set_index(group_cols)[col].to_dict()
+        
+        target_col_name = f"{col}{suffix}"
+        if len(group_cols) == 1:
+            df[target_col_name] = df[group_cols[0]].map(factor_dict)
+        else:
+            df[target_col_name] = [factor_dict.get(k) for k in keys]
+
+    return df
+
+def feature_engineering_v6(df,df_train_merged):
+    # 1. Compute group statistics
+    group_columns = ["Stint", "Compound", "Year"]
+
+    # Map all statistical factors from df_external into df
+    df = add_group_factors(
+        df=df,
+        df_train_merged=df_train_merged,
+        group_cols=group_columns,
+        value_col="TyreLife"
+    )
+    return df
+
+
+
+
+# did not use v7
+def add_lap_group_factors(
+    df: pd.DataFrame,
+    df_train_merged: pd.DataFrame,
+    group_cols: list[str] = ["Year", "Race","Stint"],
+    value_col: str = "LapNumber",
+    suffix: str = "",
+) -> pd.DataFrame:
+    """Computes LapNumber aggregations on df_train_merged grouped by Year and Race
+
+    and maps them back onto df using Pandas merge.
+    """
+    df = df.copy()
+
+    # 1. Compute group statistics for LapNumber
+    stats_all = (
+        df_train_merged.groupby(group_cols)[value_col]
+        .agg(
+            Race_Lap_Count="count",
+            Race_Lap_Mean="mean",
+            Race_Lap_Median="median",
+            Race_Lap_Min="min",
+            Race_Lap_Max="max",
+            Race_Lap_Std_Dev="std",
+        )
+        .reset_index()
+    )
+
+    # 2. Add custom suffix to generated metric columns if provided
+    if suffix:
+        rename_dict = {
+            col: f"{col}{suffix}"
+            for col in stats_all.columns
+            if col not in group_cols
+        }
+        stats_all = stats_all.rename(columns=rename_dict)
+
+    # 3. Join aggregated features back to the target dataframe
+    df = df.merge(stats_all, on=group_cols, how="left")
+
+    return df
+
+
+def feature_engineering_lap_numbers_v7(df: pd.DataFrame, df_train_merged: pd.DataFrame) -> pd.DataFrame:
+    # Group specifically by Year and Race for LapNumber features
+    group_columns = ["Year", "Race","Stint","Compound"]
+
+    df = add_lap_group_factors(
+        df=df,
+        df_train_merged=df_train_merged,
+        group_cols=group_columns,
+        value_col="LapNumber",
+    )
+
+    return df
+
+def set_fe_v1(df):
+    if "is_external_data" in df.columns:
+        df = df.sort_values(
+        ['is_external_data','Year', 'Race', 'Driver', 'LapNumber']
+        ).reset_index(drop=True)
+    else:
+        df = df.sort_values(
+                ['Year', 'Race', 'Driver', 'LapNumber']
+                ).reset_index(drop=True)
+    df = add_tire_life_columns(df)
+    df = add_laps_for_each_race(df)
+    df= prev_position_calcute(df)
+    df = get_trend_data(df)
+    return df
+
+
+def feature_engineering_v8(df):
+    df = df.copy()
+
+    group_cols = ['Year', 'Race', 'Driver']
+
+    df['PitCount'] = (
+        df.groupby(group_cols)['PitStop']
+          .cumsum()
+    )
+
+    #Too many null values
+    # df['PreviousPitLap'] = (
+    #     df['LapNumber']
+    #     .where(df['PitStop'] == 1)
+    #     .groupby([df[c] for c in group_cols])
+    #     .ffill()
+    # )
+
+    # df['LapsSincePit'] = (
+    #     df['LapNumber'] - df['PreviousPitLap']
+    # )
+
+    # # -----------------------------
+    # # Previous compound
+    # # -----------------------------
+    # df['PreviousCompound'] = (
+    #     df.groupby(group_cols)['Compound']
+    #       .shift(1)
+    # )
+
+    # -----------------------------
+    # Rolling lap-time features
+    # -----------------------------
+    df['RollingLapTime_3'] = (
+        df.groupby(group_cols)['LapTime (s)']
+          .transform(
+              lambda x: x.rolling(3, min_periods=1).mean()
+          )
+    )
+
+    if 'LapTime_Delta' in df.columns:
+        df['RollingLapTimeDelta_3'] = (
+            df.groupby(group_cols)['LapTime_Delta']
+              .transform(
+                  lambda x: x.rolling(3, min_periods=1).mean()
+              )
+        )
+
+        # Recent degradation Too many null values
+        # df['RecentDegradation'] = (
+        #     df.groupby(group_cols)['LapTime_Delta']
+        #       .transform(
+        #           lambda x: x.rolling(5, min_periods=2).mean()
+        #       )
+        # )
+
+        # # Degradation rate
+        # df['DegradationRate'] = (
+        #     df.groupby(group_cols)['LapTime_Delta']
+        #       .transform(
+        #           lambda x: x.diff()
+        #       )
+        # )
+
+    # -----------------------------
+    # Position trend
+    # -----------------------------
+    df['Position_Change_3Lap'] = (
+        df.groupby(group_cols)['Position_Change']
+          .transform(
+              lambda x: x.rolling(3, min_periods=1).sum()
+          )
+        if 'Position_Change' in df.columns
+        else 0
+    )
+
+    # -----------------------------
+    # Tyre features
+    # -----------------------------
+    COMPOUND_HARDNESS = {
+        'SOFT': 1,
+        'MEDIUM': 2,
+        'HARD': 3,
+        'INTERMEDIATE': 4,
+        'WET': 5
+    }
+
+
+    df['Compound_Hardness'] = (
+        df['Compound'].map(COMPOUND_HARDNESS)
+    )
+
+    # -----------------------------
+    # Remove temporary / invalid values
+    # -----------------------------
+    df.replace([float('inf'), -float('inf')], 0, inplace=True)
+
+    return df
